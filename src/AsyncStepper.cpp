@@ -119,7 +119,7 @@ void AsyncStepper::setSpeed(int32_t speed)
     //Timer->setPWM(PWMchannel, _pwmPin, _speed, 20);
     Timer->setMode(PWMchannel, TIMER_OUTPUT_COMPARE_PWM1,_pwmPin);
     Timer->setOverflow(_speed,HERTZ_FORMAT);
-    Timer->setCaptureCompare(PWMchannel, 20, PERCENT_COMPARE_FORMAT);
+    Timer->setCaptureCompare(PWMchannel, 40, PERCENT_COMPARE_FORMAT);
     Timer->refresh();
 }
 

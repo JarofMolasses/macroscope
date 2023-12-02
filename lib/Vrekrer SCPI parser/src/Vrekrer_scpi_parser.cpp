@@ -397,7 +397,7 @@ char* SCPI_Parser::GetMessage(Stream& interface, const char* term_chars) {
   }
   //No more chars available yet
 
-  //Return NULL if no message is incomming
+  //Return NULL if no message is incoming
   if (message_length_ == 0) return NULL;
 
   //Check for communication timeout

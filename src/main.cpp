@@ -8,20 +8,24 @@
  */
 
 /**TIMER ALLOCATIONS:
- * TIM9 - main timer system event timer internal
+ * TIM9 - main timer system event timer internal 
  *  CH1: UART
  *  CH2: LCD
  * 
- * TIM11 - secondary timer internal
+ * TIM11 - secondary timer internal (unused)
  *  
  * TIM4 
- *  Ch1 - PB6 - coil PWMA
+ *  Ch1 - PB6 - coil PWMA     
  *  Ch2 - PB7 - coil PWMB
  * TIM1
- *  Ch1 - 
+ *  Ch1 - Aux PWM signal. 
  * 
  * TIM3 Ch2 - PB5 - X stepper pulse generator 
  * TIM2 Ch2 - PA1 - Y stepper pulse generator
+ * What if you want a third stepper? 
+ * TIM5 can be accessed as a secondary option on PA0
+ * TIM4 can be freed up if we don't need the coast mode for the coil driver
+ * TIM10 is hard to get at, only one pin carries it and it's not convenient
 */
 #define LCD_LENGTH 20
 
@@ -41,6 +45,10 @@ char lcdline0[LCD_LENGTH+1];
 char lcdline1[LCD_LENGTH+1];
 char lcdline2[LCD_LENGTH+1];
 char lcdline3[LCD_LENGTH+1];
+
+/* uart print buffer */
+char uartBuffer[48];
+char checksumBuffer[8];
 
 /**
  * ADC components
@@ -73,10 +81,15 @@ uint8_t PWMchannel_coil = 1;
 volatile uint32_t probeFrequency = 36;      
 volatile uint32_t coilPWMFrequency = probeFrequency*2 * SINETABLESIZE*2;
 volatile uint8_t coilSineDegrees = 0;   // Tracks the degree step through the sine table
-volatile uint8_t coilDutyCycle = 0;     // Current required duty cycle converted from sine table
-volatile uint8_t auxDutyCycle = 50;      // aux (supply-side) PWM duty cycle for square wave drive
+// volatile uint8_t coilDutyCycle = 0;     // Current required duty cycle converted from sine table
 volatile bool coilState = false;        // Tracks which coil input is active
 volatile sineModes_T sineMode = SQUARE;  // Tracks TB6612 driving mode
+
+/* Square/ brake mode specifics*/
+volatile uint8_t auxDutyCycle = 80;      // aux (supply-side) PWM duty cycle for square wave drive
+volatile uint16_t sineTableOverflow = 0;          // Tto set peak voltage of sine wave from auxDutyCycle
+volatile uint16_t sineTableDutyCycleFactor = 1;   // To set peak voltage of sine wave from auxDutyCycle
+
 
 /**
  * System timers
@@ -84,7 +97,7 @@ volatile sineModes_T sineMode = SQUARE;  // Tracks TB6612 driving mode
 HardwareTimer *mainTimer = new HardwareTimer(TIM9);      // HardwareTimer makes some configs convenient. low-level registers accessible through TIMx
 HardwareTimer *tim11 = new HardwareTimer(TIM11);           // Convenient aux timer handle via HardwareTimer 
 volatile uint16_t uartFreq = 100;
-volatile uint16_t lcdFreq = 20;
+volatile uint16_t lcdFreq = 5;
 volatile uint16_t uartTicks = 0;
 volatile uint16_t lcdTicks = 0;
 volatile bool ledOn = false;                          // UART debug LED
@@ -128,8 +141,29 @@ void timer9_1ISR()
   digitalWrite(PC13, ledOn ? HIGH:LOW);
   if(logOn)
   {
-    Serial.println(adcRawCounts);
-    //Serial.println(adcVolts,9);
+    // Byte packet version
+    // uint8_t adcHighByte = (uint8_t)adcRawCounts>>16;
+    // uint8_t adcMidByte = (uint8_t)adcRawCounts>>8;
+    // uint8_t adcLowByte = (uint8_t)adcRawCounts;
+    // uint8_t xHighByte = (uint8_t)xStepper.currentPosition()>>8;
+    // uint8_t xLowByte = (uint8_t)xStepper.currentPosition();
+    // uint8_t yHighByte = (uint8_t)yStepper.currentPosition()>>8;
+    // uint8_t yLowByte = (uint8_t)yStepper.currentPosition();
+    // uint8_t escape = 0;
+    // Serial.write(0xFF);       // Start byte
+    // Serial.write(adcHighByte);
+    // Serial.write(adcMidByte);
+    // Serial.write(adcLowByte);
+    // Serial.write(xHighByte);
+    // Serial.write(xLowByte);
+    // Serial.write(yHighByte);
+    // Serial.write(yLowByte);
+    // Serial.write(escape);
+    
+    uint32_t checksum = sprintf(uartBuffer, "__DATA__,%d,%d,%d,", adcRawCounts, xStepper.currentPosition(), yStepper.currentPosition());
+    sprintf(checksumBuffer, "%d", checksum);
+    Serial.print(uartBuffer);
+    Serial.println(checksum);
   }
 
   TIM9->CCR1 += uartTicks;
@@ -175,8 +209,11 @@ void coilBrakeISR()
     case BRAKE:   // Produce sine function from lookup table on PWM pin
     {
       uint16_t compactSineIndex = coilSineDegrees<=(SINETABLESIZE)?coilSineDegrees : SINETABLESIZE-coilSineDegrees%SINETABLESIZE;  // Take only the wraparound value
-      uint16_t overflow = auxPWMTimer->getOverflow(TICK_FORMAT);
-      uint16_t sin = (overflow/255)*pgm_read_byte(&sinA[compactSineIndex]);
+      
+      // uint16_t overflow = auxPWMTimer->getOverflow(TICK_FORMAT);
+      // uint16_t sin = (overflow/255)*pgm_read_byte(&sinA[compactSineIndex]);
+
+      uint16_t sin = (sineTableDutyCycleFactor)*pgm_read_byte(&sinA[compactSineIndex]);
       auxPWMTimer->setCaptureCompare(PWMchannel_coil, sin, TICK_COMPARE_FORMAT); // update sine duty cycle on PWM pin
     }
     break;
@@ -202,8 +239,11 @@ void coilCoastISR()
     digitalWrite(PB13, coilState?HIGH:LOW);
   }
   uint16_t compactSineIndex = coilSineDegrees<=(SINETABLESIZE)?coilSineDegrees : SINETABLESIZE-coilSineDegrees%SINETABLESIZE;  // Take only the wraparound value
+  
+  // This is slow. You can calculate constants at the first call 
   uint16_t overflow = coilPWMTimer->getOverflow(TICK_FORMAT);
   uint16_t sin = (overflow/255)*pgm_read_byte(&sinA[compactSineIndex]);
+
   if(coilState)
   {
     coilPWMTimer->setCaptureCompare(PWMchannel_coilA, sin, TICK_COMPARE_FORMAT); // update sine duty cycle on PWM pin
@@ -269,6 +309,9 @@ void startCoil()
       auxPWMTimer->attachInterrupt(coilBrakeISR);
       auxPWMTimer->refresh();
       auxPWMTimer->resume(); 
+
+      sineTableOverflow = auxPWMTimer->getOverflow(TICK_FORMAT);      // update constants for ISR calculations
+      sineTableDutyCycleFactor = (uint16_t) (auxDutyCycle/100.0 * sineTableOverflow/255);
       break;
     default:
       break;
@@ -327,6 +370,7 @@ void scpi_uartDrate(SCPI_C commands, SCPI_P parameters, Stream& interface)
   mainTimer->setCaptureCompare(1, uartFreq, HERTZ_COMPARE_FORMAT);
   uartTicks = mainTimer->getCaptureCompare(1);                      // Calculate number of ticks to increment and store in uartTicks 
 }
+
 /* Toggle UART logging */
 void scpi_uartLog(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
@@ -354,14 +398,7 @@ void xAbs(int32_t* pos)
   xStepper.runSpeedToPosition(pos[0]);
   HD44780_SetCursor(0,3);
   snprintf(lcdline3, LCD_LENGTH+1, "A X%-6d            ", pos[0]);
-  HD44780_PrintStr(lcdline3);
-
-  while(xStepper.direction() != AsyncStepper::DIRECTION_STOP)
-  {
-    adcRawCounts = adc.readSingle();
-    adcVolts = adc.convertToVoltage(adcRawCounts);
-    updateLCD(1,1,1,0);
-  } // Optional: block (includes blocking the next multiline commands) until move is finished.   
+  HD44780_PrintStr(lcdline3);  
   }
 }
 
@@ -378,13 +415,6 @@ void xStep(int32_t *pos)
   HD44780_SetCursor(0,3);
   snprintf(lcdline3, LCD_LENGTH+1, "R X%-6d            ", stepX);
   HD44780_PrintStr(lcdline3);
-
-  while(xStepper.direction() != AsyncStepper::DIRECTION_STOP)
-  {
-    adcRawCounts = adc.readSingle();
-    adcVolts = adc.convertToVoltage(adcRawCounts);
-    updateLCD(1,1,1,0);
-  } // Optional: block (includes blocking the next multiline commands) until move is finished.
 }
 
 void scpi_xStep(SCPI_C commands, SCPI_P parameters, Stream& interface)
@@ -401,13 +431,6 @@ void yAbs(int32_t* pos)
     HD44780_SetCursor(0,3);
     snprintf(lcdline3, LCD_LENGTH+1, "A Y%-6d            ", pos[0]);
     HD44780_PrintStr(lcdline3);
-
-    while(yStepper.direction() != AsyncStepper::DIRECTION_STOP)
-    {
-      adcRawCounts = adc.readSingle();
-      adcVolts = adc.convertToVoltage(adcRawCounts);
-      updateLCD(1,1,1,0);
-    } // Optional: block (includes blocking the next multiline commands) until move is finished.
   }
 }
 
@@ -423,13 +446,6 @@ void yStep(int32_t *pos)
   HD44780_SetCursor(0,3);
   snprintf(lcdline3, LCD_LENGTH+1, "R Y%-6d            ", stepY);
   HD44780_PrintStr(lcdline3);
-
-  while(yStepper.direction() != AsyncStepper::DIRECTION_STOP)
-  {
-    adcRawCounts = adc.readSingle();
-    adcVolts = adc.convertToVoltage(adcRawCounts);
-    updateLCD(1,1,1,0);
-  } // Optional: block (includes blocking the next multiline commands) until move is finished.
 }
 
 void scpi_yStep(SCPI_C commands, SCPI_P parameters, Stream& interface)
@@ -445,13 +461,6 @@ void xyStep(int32_t *pos)
   HD44780_SetCursor(0,3);
   snprintf(lcdline3, LCD_LENGTH+1, "R X%-6d Y%-6d", stepX, stepY);
   HD44780_PrintStr(lcdline3);
-
-  while(xStepper.direction() != AsyncStepper::DIRECTION_STOP || yStepper.direction() != AsyncStepper::DIRECTION_STOP)
-  {
-    adcRawCounts = adc.readSingle();
-    adcVolts = adc.convertToVoltage(adcRawCounts);
-    updateLCD(1,1,1,0);
-  } // Optional: block (includes blocking the next multiline commands) until move is finished.
 }
 
 
@@ -470,16 +479,19 @@ void xyAbs(int32_t *pos)
   HD44780_SetCursor(0,3);
   snprintf(lcdline3, LCD_LENGTH+1, "A X%-6d Y%-6d ", posX, posY);
   HD44780_PrintStr(lcdline3);
-  while(xStepper.direction() != AsyncStepper::DIRECTION_STOP || yStepper.direction() != AsyncStepper::DIRECTION_STOP)
-  {
-    adcRawCounts = adc.readSingle();
-    adcVolts = adc.convertToVoltage(adcRawCounts);
-    updateLCD(1,1,1,0);
-  } // Optional: block (includes blocking the next multiline commands) until move is finished.
 }
 void scpi_xyAbs(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
   scpi_nCallInt32(parameters, 2, &xyAbs, "move XY absolute");
+}
+
+void scpi_xZero(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  xStepper.setCurrentPosition(0);
+}
+void scpi_yZero(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  yStepper.setCurrentPosition(0);
 }
 
 void setCoilFreq(int32_t *freq)
@@ -511,6 +523,73 @@ void scpi_coilOff(SCPI_C commands, SCPI_P parameters, Stream& interface)
   HD44780_PrintStr(lcdline3);
 }
 
+void scpi_steppersOff(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  xStepper.disable();
+  yStepper.disable();
+  HD44780_SetCursor(0,3);
+  snprintf(lcdline3, LCD_LENGTH+1, "Steppers disabled  ");
+  HD44780_PrintStr(lcdline3);
+}
+void scpi_steppersOn(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  xStepper.enable();
+  yStepper.enable();
+  HD44780_SetCursor(0,3);
+  snprintf(lcdline3, LCD_LENGTH+1, "Steppers enabled   ");
+  HD44780_PrintStr(lcdline3);
+}
+void serial_ready()
+{
+  Serial.println(">>");
+}
+
+/* Possibly useful: block until last move complete*/
+void scpi_join(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  Serial.println("Join");
+  while(xStepper.direction() != AsyncStepper::DIRECTION_STOP || yStepper.direction() != AsyncStepper::DIRECTION_STOP)
+  {
+    adcRawCounts = adc.readSingle();
+    adcVolts = adc.convertToVoltage(adcRawCounts);
+    updateLCD(1,1,1,0);
+  } // Optional: block (includes blocking the next multiline commands) until move is finished.
+}
+
+void scpi_adcDrate(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  uint16_t rate = abs(String(parameters[0]).toInt());
+  uint8_t rateCode = 0;
+
+  // Gross. round down to next available drate 
+  if(rate < 10) rateCode = DRATE_5SPS;
+  else if(rate < 15) rateCode = DRATE_10SPS;
+  else if(rate < 30) rateCode = DRATE_15SPS;
+  else if(rate < 60) rateCode = DRATE_30SPS;
+  else if(rate < 100) rateCode = DRATE_60SPS;
+  else if(rate < 500) rateCode = DRATE_100SPS;
+  else if(rate < 1000) rateCode = DRATE_500SPS;
+  else if(rate == 1000) rateCode = DRATE_1000SPS;
+  else 
+    Serial.println(F("Target data rate out of range"));
+
+  if(rateCode != 0) 
+  {
+    adc.setDRATE(rateCode);
+    Serial.print(F("Set ADC DRATE: ")); Serial.println(rateCode,BIN);
+  }
+}
+
+void scpi_adcReset(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  resetADC();
+}
+
+void scpi_pause(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+
+}
+
 void scpi_debug(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
   parser.PrintDebugInfo();
@@ -537,25 +616,33 @@ void loop() {
   HD44780_Display();
 
   /* Register SCPI commands */
-  parser.hash_magic_number = 113;        // You may need to adjust the hash magic number 
+  parser.hash_magic_number = 57;        // You may need to adjust the hash magic number 
+  parser.registerCommand("Join", &scpi_join);
   parser.SetCommandTreeBase("sys");
     parser.registerCommand(F("drate"),&scpi_uartDrate);
     parser.registerCommand(F("log"), &scpi_uartLog);  
     parser.registerCommand(F("debug"), &scpi_debug);
   parser.SetCommandTreeBase("xy");
     parser.registerCommand(F("abs"), &scpi_xyAbs);
+    parser.registerCommand(F("ENable"),&scpi_steppersOn);
+    parser.registerCommand(F("DISable"),&scpi_steppersOff);
     parser.registerCommand(F("step"),&scpi_xyStep);
     parser.registerCommand(F("SPeed"),&scpi_xySpeed);
   parser.SetCommandTreeBase(F("X"));                        // That's interesting. Not allowed to call this "x" lowercase
     parser.registerCommand(F("abs"), &scpi_xAbs);
     parser.registerCommand(F("step"), &scpi_xStep);
+    parser.registerCommand(F("zero"), &scpi_xZero);
   parser.SetCommandTreeBase(F("Y"));
     parser.registerCommand(F("abs"), &scpi_yAbs);
     parser.registerCommand(F("step"), &scpi_yStep);
+    parser.registerCommand(F("zero"), &scpi_yZero);
   parser.SetCommandTreeBase(F("Coil"));
     parser.registerCommand(F("On"),&scpi_coilOn);
     parser.registerCommand(F("Off"),&scpi_coilOff);
     parser.registerCommand(F("F"),&scpi_coilFreq);
+  parser.SetCommandTreeBase(F("ADC"));
+    parser.registerCommand(F("drate"),&scpi_adcDrate);
+    parser.registerCommand(F("RESet"),&scpi_adcReset);
 
   Serial.begin(115200);
 
@@ -563,12 +650,6 @@ void loop() {
   pinMode(PB13,OUTPUT);    // Temporary debug
 
   // Initial set up step generators in x and y
-  // xStepper.Timer->setPWM(PWMchannel_x, stepPinx, 0, 30, xStepISR);
-  // yStepper.Timer->setPWM(PWMchannel_y, stepPiny, 0, 30, yStepISR);
-  // xStepper.Timer->refresh();
-  // xStepper.Timer->pause();
-  // yStepper.Timer->refresh();
-  // yStepper.Timer->pause();
   xStepper.Timer->attachInterrupt(xStepper.PWMchannel, xStepISR);
   yStepper.Timer->attachInterrupt(yStepper.PWMchannel, yStepISR);
   xStepper.setSpeed(10000);
@@ -591,15 +672,6 @@ void loop() {
   adc.InitializeADC();
   resetADC();
 
-  xStepper.enable();
-  yStepper.enable();
-
-  // Test: run steppers
-  // tim11->setOverflow(100, HERTZ_FORMAT);
-  // tim11->attachInterrupt(timer11_0ISR);
-  // tim11->refresh();
-  // tim11->resume();
-
   // Test: run coil
   sineMode = BRAKE;
   startCoil();
@@ -607,6 +679,17 @@ void loop() {
   HD44780_NoDisplay();
   HD44780_Clear(); 
   HD44780_Display();
+
+  xStepper.enable();
+  yStepper.enable();
+
+  serial_ready();
+
+  // Test: run steppers
+  // tim11->setOverflow(100, HERTZ_FORMAT);
+  // tim11->attachInterrupt(timer11_0ISR);
+  // tim11->refresh();
+  // tim11->resume();
 
   while(true)
   {
@@ -617,6 +700,7 @@ void loop() {
       // snprintf(lcdline3, LCD_LENGTH+1, message);
       // HD44780_PrintStr(lcdline3);                // Prints exact message to screen.
       parser.Execute(message, Serial);
+      serial_ready();                               // Signal that buffer's been read, host can send more commands 
     }
 
     adcRawCounts = adc.readSingle();
