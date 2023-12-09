@@ -478,12 +478,12 @@ long ADS1256::readSingle() //Reading a single value ONCE using the RDATA command
 	digitalWrite(_CS_pin, HIGH); //We finished the command sequence, so we set CS to HIGH
 	SPI.endTransaction();
   
-	return _outputValue;
-  	// uint32_t adc_val = _outputValue;
-	// if (adc_val > 0x7fffff) { //if MSB == 1
-    // 	adc_val = adc_val - 16777216; //do 2's complement, keep the sign this time!
-  	// }
-	// return(adc_val);			// modify to interpret 2's complement, and shift everything to positive 
+	//return _outputValue;
+  	uint32_t adc_val = _outputValue;
+	if (adc_val > 0x7fffff) { //if MSB == 1
+    	adc_val = adc_val - 16777216; //do 2's complement, keep the sign this time!
+  	}
+	return(adc_val);			// modify to interpret 2's complement, and shift everything to positive 
 }
 
 

@@ -25,6 +25,16 @@ const unsigned char sinA [] PROGMEM =
 249, 250, 251, 251, 252, 253, 253, 254, 254, 254, 254, 254, 255};
 
 
+/**
+ * LCD ADC display setting
+*/
+enum dispSettings_T{
+    COUNTS,
+    VOLTS,
+    CNEWTONS,
+    MICRONS,
+};
+
 /** 
  * UART data tx/rx format enum
 */

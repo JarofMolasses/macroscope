@@ -131,13 +131,6 @@ void AsyncStepper::setCurrentPosition(int32_t pos)
 
 void AsyncStepper::stepTimerISR()
 {
-    if(_currentPos == _targetPos && _mode==1)
-    {   
-        // STM32 hardware timer 
-        Timer->pause();
-        _direction = DIRECTION_STOP;
-    }
-    
     switch(_direction)
     {
         case DIRECTION_CCW:
@@ -149,6 +142,13 @@ void AsyncStepper::stepTimerISR()
         case DIRECTION_STOP:
         default:
             break;
+    }    
+    
+    if(_currentPos == _targetPos && _mode==1)
+    {   
+        // STM32 hardware timer 
+        Timer->pause();
+        _direction = DIRECTION_STOP;
     }
 }
 

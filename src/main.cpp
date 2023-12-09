@@ -28,6 +28,7 @@
  * TIM10 is hard to get at, only one pin carries it and it's not convenient
 */
 #define LCD_LENGTH 20
+#define ADC_BUFFER_SIZE 10
 
 #include <HardwareTimer.h>
 #include <SPI.h>
@@ -37,6 +38,7 @@
 #include "config.h"
 #include "liquidcrystal_i2c.h"
 #include "Vrekrer_scpi_parser.h"
+#include <queue>
 
 /**
  * A silly debug LCD. 20x4 characters
@@ -54,8 +56,24 @@ char checksumBuffer[8];
  * ADC components
 */
 ADS1256 adc(ADC_DRDY, 0, ADC_SYNC, ADC_CS, 5.00);    
-uint32_t adcRawCounts = 0;
-float adcVolts = 0;
+int32_t adcRawCounts = 0;
+double adcVolts = 0;
+double adcForce = 0;
+double adcHeight = 0;
+/**
+ * Calibration constants
+ * Force in cN
+ * Distance in mm
+*/
+double counts_to_cN = 0.03;
+double counts_offset = 0.00;
+double force_to_mm = (1.0/19600)*1000;  // 19600 cN/m
+/**
+ * Amplitude measurement buffer
+*/
+std::queue<int32_t> adcBuffer;
+
+
 
 /* Step pulse generators */
 /**
@@ -86,7 +104,8 @@ volatile bool coilState = false;        // Tracks which coil input is active
 volatile sineModes_T sineMode = SQUARE;  // Tracks TB6612 driving mode
 
 /* Square/ brake mode specifics*/
-volatile uint8_t auxDutyCycle = 80;      // aux (supply-side) PWM duty cycle for square wave drive
+volatile uint8_t auxDutyCycle = 30;      // aux (supply-side) PWM duty cycle for square wave drive
+volatile uint8_t staticDutyCycle = 70;   // static duty cycle has to be higher to get appreciable tip deflection
 volatile uint16_t sineTableOverflow = 0;          // Tto set peak voltage of sine wave from auxDutyCycle
 volatile uint16_t sineTableDutyCycleFactor = 1;   // To set peak voltage of sine wave from auxDutyCycle
 
@@ -96,7 +115,7 @@ volatile uint16_t sineTableDutyCycleFactor = 1;   // To set peak voltage of sine
  */           
 HardwareTimer *mainTimer = new HardwareTimer(TIM9);      // HardwareTimer makes some configs convenient. low-level registers accessible through TIMx
 HardwareTimer *tim11 = new HardwareTimer(TIM11);           // Convenient aux timer handle via HardwareTimer 
-volatile uint16_t uartFreq = 100;
+volatile uint16_t uartFreq = 50;
 volatile uint16_t lcdFreq = 5;
 volatile uint16_t uartTicks = 0;
 volatile uint16_t lcdTicks = 0;
@@ -108,10 +127,37 @@ volatile uint32_t rasterLines = 0;
 
 SCPI_Parser parser;
 
+/**
+ * return: measured force in centinewtons
+*/
+double countsToCN(int32_t counts)
+{
+  return (counts - counts_offset)* counts_to_cN;
+}
+/**
+ * return: measured displacement in millimeters
+*/
+double cNtoMillimeters(double cN)
+{
+  return cN*force_to_mm;
+}
+void adcUpdateAll()
+{
+  adcRawCounts = adc.readSingle();
+  adcBuffer.push(adcRawCounts);
+  if(adcBuffer.size() >= ADC_BUFFER_SIZE)
+  {
+    adcBuffer.pop();
+  }
+  adcVolts = adc.convertToVoltage(adcRawCounts);
+  adcForce = countsToCN(adcRawCounts);
+  adcHeight = cNtoMillimeters(adcForce);
+}
+
 void updateLCD(byte l1, byte l2, byte l3, byte l4)
 {
   if(l1){
-  snprintf(lcdline0, LCD_LENGTH+1, "ADC : %0.7f V",adcVolts);
+  snprintf(lcdline0, LCD_LENGTH+1, "ADC : %+0.8f mm",adcHeight);
   HD44780_SetCursor(0,0);
   HD44780_PrintStr(lcdline0);
   }
@@ -137,10 +183,10 @@ void updateLCD(byte l1, byte l2, byte l3, byte l4)
 */
 void timer9_1ISR()
 {
-  ledOn = !ledOn;     
-  digitalWrite(PC13, ledOn ? HIGH:LOW);
   if(logOn)
   {
+    ledOn = !ledOn;     
+    digitalWrite(PC13, ledOn ? HIGH:LOW);
     // Byte packet version
     // uint8_t adcHighByte = (uint8_t)adcRawCounts>>16;
     // uint8_t adcMidByte = (uint8_t)adcRawCounts>>8;
@@ -316,6 +362,28 @@ void startCoil()
     default:
       break;
   }
+}
+
+void liftCoil()
+{
+  startCoil();
+  stopCoil();
+  digitalWrite(coilInA, HIGH);
+  digitalWrite(coilInB, LOW);
+  auxPWMTimer->setCaptureCompare(PWMchannel_coil, staticDutyCycle, PERCENT_COMPARE_FORMAT);
+  auxPWMTimer->refresh();
+  auxPWMTimer->resume();
+}
+
+void dropCoil()
+{
+  startCoil();
+  stopCoil();
+  digitalWrite(coilInA, LOW);
+  digitalWrite(coilInB, HIGH);
+  auxPWMTimer->setCaptureCompare(PWMchannel_coil, staticDutyCycle, PERCENT_COMPARE_FORMAT);
+  auxPWMTimer->refresh();
+  auxPWMTimer->resume();
 }
 
 /**
@@ -506,7 +574,21 @@ void setCoilFreq(int32_t *freq)
 } 
 void scpi_coilFreq(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
-  scpi_nCallInt32(parameters, 1, setCoilFreq, "coil freq");
+  scpi_nCallInt32(parameters, 1, setCoilFreq, "Set coil freq");
+}
+void scpi_coilLift(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  liftCoil();
+  HD44780_SetCursor(0,3);
+  snprintf(lcdline3, LCD_LENGTH+1, "Coil lift            ");
+  HD44780_PrintStr(lcdline3);
+}
+void scpi_coilDrop(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  dropCoil();
+  HD44780_SetCursor(0,3);
+  snprintf(lcdline3, LCD_LENGTH+1, "Coil drop            ");
+  HD44780_PrintStr(lcdline3);
 }
 void scpi_coilOn(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
@@ -541,17 +623,23 @@ void scpi_steppersOn(SCPI_C commands, SCPI_P parameters, Stream& interface)
 }
 void serial_ready()
 {
-  Serial.println(">>");
+  Serial.println(">");
 }
 
+void scpi_pause(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  uint32_t delayMs = String(parameters[0]).toInt();
+  //Serial.println("Pause");
+  delay(String(parameters[0]).toInt());
+}
 /* Possibly useful: block until last move complete*/
 void scpi_join(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
-  Serial.println("Join");
+  //Serial.println("Join");
+  //Serial.println(">");
   while(xStepper.direction() != AsyncStepper::DIRECTION_STOP || yStepper.direction() != AsyncStepper::DIRECTION_STOP)
   {
-    adcRawCounts = adc.readSingle();
-    adcVolts = adc.convertToVoltage(adcRawCounts);
+    adcUpdateAll();
     updateLCD(1,1,1,0);
   } // Optional: block (includes blocking the next multiline commands) until move is finished.
 }
@@ -571,12 +659,12 @@ void scpi_adcDrate(SCPI_C commands, SCPI_P parameters, Stream& interface)
   else if(rate < 1000) rateCode = DRATE_500SPS;
   else if(rate == 1000) rateCode = DRATE_1000SPS;
   else 
-    Serial.println(F("Target data rate out of range"));
+    //Serial.println(F("Target data rate out of range"));
 
   if(rateCode != 0) 
   {
     adc.setDRATE(rateCode);
-    Serial.print(F("Set ADC DRATE: ")); Serial.println(rateCode,BIN);
+    //Serial.print(F("Set ADC DRATE: ")); Serial.println(rateCode,BIN);
   }
 }
 
@@ -585,14 +673,50 @@ void scpi_adcReset(SCPI_C commands, SCPI_P parameters, Stream& interface)
   resetADC();
 }
 
-void scpi_pause(SCPI_C commands, SCPI_P parameters, Stream& interface)
+void scpi_adcOffs(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
-
+  int32_t sum = 0;
+  uint16_t times = 16;
+  for(int i = 0; i<times; i++)
+  {
+    sum += adc.readSingle();
+  }
+  adcRawCounts = sum/times; 
+  counts_offset = adcRawCounts;
 }
 
+/**
+ * Computes counts to cN calibration constant
+ * 
+ * return: new value of counts to cN calibration constant
+*/
+float adcCal(float cN)
+{
+  int32_t sum = 0;
+  uint16_t times = 16;
+  for(int i = 0; i<times; i++)
+  {
+    sum += adc.readSingle();
+  }
+  adcRawCounts = sum/times; 
+  counts_to_cN = cN/(adcRawCounts - counts_offset);
+  return counts_to_cN;
+}
+
+void scpi_adcCal(SCPI_C commands, SCPI_P parameters, Stream& interface)
+{
+  Serial.println(adcCal(String(parameters[0]).toDouble()));
+}
 void scpi_debug(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
   parser.PrintDebugInfo();
+}
+void scpi_meas(SCPI_C command, SCPI_P parameters, Stream& interface)
+{
+    uint32_t checksum = sprintf(uartBuffer, "__DATA__,%d,%d,%d,", adcRawCounts, xStepper.currentPosition(), yStepper.currentPosition());
+    sprintf(checksumBuffer, "%d", checksum);
+    Serial.print(uartBuffer);
+    Serial.println(checksum);
 }
 
 void setup() {
@@ -616,8 +740,10 @@ void loop() {
   HD44780_Display();
 
   /* Register SCPI commands */
-  parser.hash_magic_number = 57;        // You may need to adjust the hash magic number 
+  parser.hash_magic_number = 113;        // You may need to adjust the hash magic number 
   parser.registerCommand("Join", &scpi_join);
+  parser.registerCommand("pause", &scpi_pause);
+  //parser.registerCommand("meas?", &scpi_meas);
   parser.SetCommandTreeBase("sys");
     parser.registerCommand(F("drate"),&scpi_uartDrate);
     parser.registerCommand(F("log"), &scpi_uartLog);  
@@ -636,15 +762,19 @@ void loop() {
     parser.registerCommand(F("abs"), &scpi_yAbs);
     parser.registerCommand(F("step"), &scpi_yStep);
     parser.registerCommand(F("zero"), &scpi_yZero);
-  parser.SetCommandTreeBase(F("Coil"));
-    parser.registerCommand(F("On"),&scpi_coilOn);
-    parser.registerCommand(F("Off"),&scpi_coilOff);
-    parser.registerCommand(F("F"),&scpi_coilFreq);
   parser.SetCommandTreeBase(F("ADC"));
     parser.registerCommand(F("drate"),&scpi_adcDrate);
     parser.registerCommand(F("RESet"),&scpi_adcReset);
-
+    parser.registerCommand(F("offs"),&scpi_adcOffs);
+    parser.registerCommand(F("cal"),&scpi_adcCal);
+  parser.SetCommandTreeBase(F("Coil"));                   // Also interesting. If you put coil above adc it will erroneously do a coil drop even if you don't comand it
+    parser.registerCommand(F("On"),&scpi_coilOn);
+    parser.registerCommand(F("F"),&scpi_coilFreq);
+    parser.registerCommand(F("Off"),&scpi_coilOff);
+    parser.registerCommand(F("DROP"),&scpi_coilDrop);
+    parser.registerCommand(F("LIFT"),&scpi_coilLift);
   Serial.begin(115200);
+  Serial.flush();
 
   pinMode(PC13,OUTPUT);
   pinMode(PB13,OUTPUT);    // Temporary debug
@@ -672,13 +802,34 @@ void loop() {
   adc.InitializeADC();
   resetADC();
 
-  // Test: run coil
-  sineMode = BRAKE;
-  startCoil();
- 
   HD44780_NoDisplay();
   HD44780_Clear(); 
   HD44780_Display();
+
+  HD44780_SetCursor(0,0);
+  HD44780_PrintStr("Calibrating");
+  // Initial offset calibration.
+  int32_t sum = 0;
+  uint16_t times = 128;
+  for(int i = 0; i<times; i++)
+  {
+    sum += adc.readSingle();
+  }
+  adcRawCounts = sum/times; 
+  counts_offset = adcRawCounts;
+
+  HD44780_NoDisplay();
+  HD44780_Clear(); 
+  HD44780_SetCursor(0,0);
+  HD44780_PrintStr("SCPI init OK");
+  HD44780_SetCursor(0,1);
+  HD44780_PrintStr("Self-tests passed");
+  HD44780_Display();  
+  delay(2000);
+  
+  // Test: set up and run coil
+  sineMode = BRAKE;
+  // startCoil();
 
   xStepper.enable();
   yStepper.enable();
@@ -703,8 +854,7 @@ void loop() {
       serial_ready();                               // Signal that buffer's been read, host can send more commands 
     }
 
-    adcRawCounts = adc.readSingle();
-    adcVolts = adc.convertToVoltage(adcRawCounts);
+    adcUpdateAll();
 
     if(lcdFlag)
     {

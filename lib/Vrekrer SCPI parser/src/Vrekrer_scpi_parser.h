@@ -9,32 +9,32 @@ Header file.
 
 /// Max branch size of the command tree and max number of parameters.
 #ifndef SCPI_ARRAY_SYZE
-  #define SCPI_ARRAY_SYZE 32
+  #define SCPI_ARRAY_SYZE 64
 #endif
 
 /// Max number of valid tokens.
 #ifndef SCPI_MAX_TOKENS
-  #define SCPI_MAX_TOKENS 36
+  #define SCPI_MAX_TOKENS 64
 #endif
 
 /// Max number of registered commands.
 #ifndef SCPI_MAX_COMMANDS
-  #define SCPI_MAX_COMMANDS 36
+  #define SCPI_MAX_COMMANDS 64
 #endif
 
 /// Length of the message buffer.
 #ifndef SCPI_BUFFER_LENGTH
-  #define SCPI_BUFFER_LENGTH 128
+  #define SCPI_BUFFER_LENGTH 1024
 #endif
 
 /// Timeout, in miliseconds, for GetMessage and ProcessInput.
 #ifndef SCPI_TIMEOUT
-  #define SCPI_TIMEOUT 10
+  #define SCPI_TIMEOUT 50
 #endif
 
 /// Integer size used for hashes.
 #ifndef SCPI_HASH_TYPE
-  #define SCPI_HASH_TYPE uint8_t
+  #define SCPI_HASH_TYPE uint16_t
 #endif
 
 #include "Arduino.h"
@@ -153,7 +153,7 @@ class SCPI_Parser {
   
  protected:
   //Length of the message buffer.
-  const uint8_t buffer_length = SCPI_BUFFER_LENGTH;
+  const uint16_t buffer_length = SCPI_BUFFER_LENGTH;
   //Timeout, in miliseconds, for GetMessage and ProcessInput.
   const int timeout = SCPI_TIMEOUT;
   //Max number of valid tokens.
