@@ -8,8 +8,7 @@
 			"path": "../../../../../../jorsh/UBC you can (not) succeed/2023W fin/423/examples/Tensile-tester-master/Tensile-tester-master"
 		},
 		{
-			"name": "bare_minimum_STM32F4",
-			"path": "../bare_minimum_STM32F4"
+			"path": "../../../../../../Users/FangZhou/Documents/PlatformIO/Projects/bare_minimum_STM32F4"
 		}
 	],
 	"settings": {
