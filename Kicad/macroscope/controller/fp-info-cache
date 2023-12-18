@@ -1,4 +1,4 @@
-21943649929779889
+21948758487929326
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -51526,6 +51526,20 @@ SMD SMT ceramic resonator filter filter hand-soldering
 0
 3
 3
+Custom footprints
+A4988_Pololu_Breakout-16_15.2x20.3mm
+Pololu Breakout 16-pin 15.2x20.3mm 0.6x0.8\
+Pololu Breakout
+0
+16
+16
+Custom footprints
+TB6612FNG_Pololu_Breakout-16_15.2x20.3mm
+Pololu Breakout 16-pin 15.2x20.3mm 0.6x0.8\
+Pololu Breakout
+0
+16
+16
 Diode_SMD
 D_0201_0603Metric
 Diode SMD 0201 (0603 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: https://www.vishay.com/docs/20052/crcw0201e3.pdf), generated with kicad-footprint-generator
@@ -90859,6 +90873,13 @@ varistor
 0
 2
 2
+WeAct_Black_Pill_V2.0
+STM32F411_Black_Pill
+
+
+0
+40
+40
 bluetooth
 BLK-MD-SPK-B
 
