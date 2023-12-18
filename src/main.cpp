@@ -116,7 +116,7 @@ volatile uint16_t sineTableDutyCycleFactor = 1;   // To set peak voltage of sine
 HardwareTimer *mainTimer = new HardwareTimer(TIM9);      // HardwareTimer makes some configs convenient. low-level registers accessible through TIMx
 HardwareTimer *tim11 = new HardwareTimer(TIM11);           // Convenient aux timer handle via HardwareTimer 
 volatile uint16_t uartFreq = 50;
-volatile uint16_t lcdFreq = 5;
+volatile uint16_t lcdFreq = 1;
 volatile uint16_t uartTicks = 0;
 volatile uint16_t lcdTicks = 0;
 volatile bool ledOn = false;                          // UART debug LED
@@ -630,7 +630,11 @@ void scpi_pause(SCPI_C commands, SCPI_P parameters, Stream& interface)
 {
   uint32_t delayMs = String(parameters[0]).toInt();
   //Serial.println("Pause");
-  delay(String(parameters[0]).toInt());
+  long start = millis();
+  while(millis() - start < delayMs)
+  {
+    adcUpdateAll();
+  }
 }
 /* Possibly useful: block until last move complete*/
 void scpi_join(SCPI_C commands, SCPI_P parameters, Stream& interface)
@@ -640,7 +644,7 @@ void scpi_join(SCPI_C commands, SCPI_P parameters, Stream& interface)
   while(xStepper.direction() != AsyncStepper::DIRECTION_STOP || yStepper.direction() != AsyncStepper::DIRECTION_STOP)
   {
     adcUpdateAll();
-    updateLCD(1,1,1,0);
+    //updateLCD(1,1,1,0);
   } // Optional: block (includes blocking the next multiline commands) until move is finished.
 }
 
