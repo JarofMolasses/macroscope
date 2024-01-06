@@ -1,6 +1,8 @@
 # Macroscope
 This is a basic, constant-height, contact mode profilometer/AFM. It's really more of a demonstration piece but ~10 miron resolution can be achieved with some patience.
 
+Inspired by this paper: [*Macro-scale atomic force microscope: An experimental platform for teaching precision mechatronics*](https://www.sciencedirect.com/science/article/abs/pii/S0957415815001488).
+
 # Results
 ### Canadian nickel scanned at 1.75mm/s, 0.25mm resolution, 88x88 pixels 
 A "quick" scan. It took 46 minutes.
