@@ -6,7 +6,7 @@ This is a basic, constant-height, contact mode profilometer/AFM. It's really mor
 A "quick" scan. It took 46 minutes.
 ![image](https://github.com/JarofMolasses/macroscope/assets/33560291/c8e8d662-5f16-4c2e-a66e-2ec5dac0bd28)
 
-### 3D printed test sample with 0.1mm steps. Scanned at 0.5mm/s, 0.05mm resolution, 150x50 pixels
+### 3D printed test sample with 0.1mm steps. Scanned at 0.5mm/s, 0.05mm resolution, 60x20 pixels
 You might be able to see the diagonal print lines on the lowest step.
 ![image](https://github.com/JarofMolasses/macroscope/assets/33560291/18e0f21e-1604-4ae4-9a7f-0a570051ac9a)
 
