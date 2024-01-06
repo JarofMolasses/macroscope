@@ -10,6 +10,10 @@ A "quick" scan. It took 46 minutes.
 You might be able to see the diagonal print lines on the lowest step.
 ![image](https://github.com/JarofMolasses/macroscope/assets/33560291/18e0f21e-1604-4ae4-9a7f-0a570051ac9a)
 
+Dollar for scale:
+![IMG_0139](https://github.com/JarofMolasses/macroscope/assets/33560291/de9f6214-03b2-43d7-a7bc-30eb3a8f1153)
+
+
 # Mechanical
 ## Initial working prototype 
 ![image](https://github.com/JarofMolasses/macroscope/assets/33560291/4567d889-2869-4e69-9684-dc7e41f11532)
