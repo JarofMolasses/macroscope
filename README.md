@@ -1,5 +1,5 @@
 # Macroscope
-This is a basic, constant-height, contact mode profilometer/AFM. It's really more of a demonstration piece but ~10 miron resolution can be achieved with some patience.
+This is a basic, constant-height, contact mode profilometer/AFM. It's really more of a demonstration piece but ~10 micron resolution can be achieved with some patience.
 
 Inspired by this paper: [*Macro-scale atomic force microscope: An experimental platform for teaching precision mechatronics*](https://www.sciencedirect.com/science/article/abs/pii/S0957415815001488).
 
@@ -9,7 +9,7 @@ A "quick" scan. It took 46 minutes.
 ![image](https://github.com/JarofMolasses/macroscope/assets/33560291/c8e8d662-5f16-4c2e-a66e-2ec5dac0bd28)
 
 ### 3D printed test sample with 0.1mm steps. Scanned at 0.5mm/s, 0.05mm resolution, 60x20 pixels
-You might be able to see the diagonal print lines on the lowest step.
+You can see the diagonal print lines on the lowest step.
 ![image](https://github.com/JarofMolasses/macroscope/assets/33560291/8a1c4be1-03b4-4a1b-a90b-176587b82322)
 
 With a dollar for scale:
