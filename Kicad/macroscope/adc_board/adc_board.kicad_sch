@@ -3300,7 +3300,7 @@
     (property "Value" "ADS1256IDBR" (at 161.29 54.61 0)
       (effects (font (size 1.524 1.524)))
     )
-    (property "Footprint" "DB28" (at 115.57 62.23 0)
+    (property "Footprint" "Package_SO:SSOP-28_5.3x10.2mm_P0.65mm" (at 115.57 62.23 0)
       (effects (font (size 1.27 1.27) italic) hide)
     )
     (property "Datasheet" "ADS1256IDBR" (at 115.57 62.23 0)

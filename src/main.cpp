@@ -106,7 +106,7 @@ volatile sineModes_T sineMode = SQUARE;  // Tracks TB6612 driving mode
 /* Square/ brake mode specifics*/
 volatile uint8_t auxDutyCycle = 30;      // aux (supply-side) PWM duty cycle for square wave drive
 volatile uint8_t staticDutyCycle = 70;   // static duty cycle has to be higher to get appreciable tip deflection
-volatile uint16_t sineTableOverflow = 0;          // Tto set peak voltage of sine wave from auxDutyCycle
+volatile uint16_t sineTableOverflow = 0;          // To set peak voltage of sine wave from auxDutyCycle
 volatile uint16_t sineTableDutyCycleFactor = 1;   // To set peak voltage of sine wave from auxDutyCycle
 
 
